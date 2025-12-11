@@ -11,7 +11,6 @@ import '../models/vless_types.dart';
 import '../notifiers/profile_notifier.dart';
 import '../notifiers/vpn_notifier.dart';
 import 'profile_form_screen.dart';
-import 'log_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -24,7 +23,10 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('LumaRay VLESS'),
+        title: const Text(
+          'LumaRay 🚀',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+        ),
         actions: [
           IconButton(
             tooltip: 'Импорт из буфера',
@@ -42,75 +44,214 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => _shareActive(context),
           ),
           IconButton(
-            tooltip: 'Логи',
-            icon: const Icon(Icons.list),
-            onPressed: () => _openLogs(context),
+            tooltip: 'Новый конфиг',
+            icon: const Icon(Icons.add_rounded),
+            onPressed: () => _openEditor(context),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openEditor(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Новый конфиг'),
-      ),
       body: profileNotifier.initialized
-          ? Column(
+          ? Stack(
               children: [
-                _ConnectionCard(
-                  vpnStatus: vpn.status,
-                  active: profileNotifier.activeProfile,
-                  onDisconnect: () => vpn.disconnect(),
-                ),
-                Expanded(
+                Column(
+                  children: [
+                    Expanded(
                   child: profiles.isEmpty
-                      ? const Center(child: Text('Конфиги не добавлены'))
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.vpn_key_rounded,
+                                size: 64,
+                                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Конфиги не добавлены',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Нажмите кнопку ниже, чтобы добавить',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        )
                       : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           itemCount: profiles.length,
                           itemBuilder: (context, index) {
                             final profile = profiles[index];
                             final isActive =
                                 profileNotifier.activeId == profile.id;
                             return Card(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              child: ListTile(
-                                title: Text(profile.name),
-                                subtitle:
-                                    Text('${profile.host}:${profile.port} • ${transportToString(profile.transport)}'),
-                                leading: isActive
-                                    ? const Icon(Icons.check_circle, color: Colors.green)
-                                    : const Icon(Icons.circle_outlined),
-                                trailing: _ProfileActions(
-                                  profile: profile,
-                                  onConnect: () => _connect(context, profile),
-                                  onEdit: () => _openEditor(context, profile: profile),
-                                  onDelete: () =>
-                                      _confirmDelete(context, profile.id),
-                                  onSetActive: () =>
-                                      context.read<ProfileNotifier>().setActive(profile.id),
-                                ),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
                                 onTap: () => context
                                     .read<ProfileNotifier>()
                                     .setActive(profile.id),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: isActive
+                                              ? Theme.of(context).colorScheme.primary.withOpacity(0.2)
+                                              : Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          isActive ? Icons.check_circle_rounded : Icons.circle_outlined,
+                                          color: isActive
+                                              ? Theme.of(context).colorScheme.primary
+                                              : Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              profile.name,
+                                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontFeatures: const [
+                                                      FontFeature.enable('liga'),
+                                                    ],
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.dns_rounded,
+                                                  size: 14,
+                                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${profile.host}:${profile.port}',
+                                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                  ),
+                                                  child: Text(
+                                                    transportToString(profile.transport).toUpperCase(),
+                                                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                          color: Theme.of(context).colorScheme.primary,
+                                                          fontWeight: FontWeight.w600,
+                                                          fontSize: 10,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      _ProfileActions(
+                                        profile: profile,
+                                        onEdit: () => _openEditor(context, profile: profile),
+                                        onDelete: () =>
+                                            _confirmDelete(context, profile.id),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             );
                           },
                         ),
+                    ),
+                    _ConnectionBottomBar(
+                      vpnStatus: vpn.status,
+                      active: profileNotifier.activeProfile,
+                      uploadBytes: vpn.uploadBytes,
+                      downloadBytes: vpn.downloadBytes,
+                      onStart: () => _startVpn(context),
+                      onDisconnect: () => vpn.disconnect(),
+                    ),
+                  ],
                 ),
+                if (profileNotifier.activeProfile != null &&
+                    vpn.status != VpnStatus.connected &&
+                    vpn.status != VpnStatus.connecting)
+                  Positioned(
+                    bottom: 61,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Material(
+                        elevation: 8,
+                        shape: const CircleBorder(),
+                        color: Colors.white,
+                        child: InkWell(
+                          onTap: () => _startVpn(context),
+                          customBorder: const CircleBorder(),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.play_arrow_rounded,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else if (vpn.status == VpnStatus.connected)
+                  Positioned(
+                    bottom: 61,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: Material(
+                        elevation: 8,
+                        shape: const CircleBorder(),
+                        color: Colors.white,
+                        child: InkWell(
+                          onTap: () => vpn.disconnect(),
+                          customBorder: const CircleBorder(),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.stop_rounded,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             )
           : const Center(child: CircularProgressIndicator()),
-    );
-  }
-
-  void _openLogs(BuildContext context) {
-    final logPath = context.read<VpnNotifier>().logPath;
-    if (logPath == null) {
-      _showSnack(context, 'Лог недоступен');
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => LogScreen(logPath: logPath)),
     );
   }
 
@@ -185,11 +326,15 @@ class HomeScreen extends StatelessWidget {
     await Share.share(uri, subject: active.name);
   }
 
-  Future<void> _connect(BuildContext context, VlessProfile profile) async {
+  Future<void> _startVpn(BuildContext context) async {
     final profileNotifier = context.read<ProfileNotifier>();
     final vpnNotifier = context.read<VpnNotifier>();
-    await profileNotifier.setActive(profile.id);
-    await vpnNotifier.connect(profile);
+    final activeProfile = profileNotifier.activeProfile;
+    if (activeProfile == null) {
+      _showSnack(context, 'Выберите конфиг');
+      return;
+    }
+    await vpnNotifier.connect(activeProfile);
   }
 
   void _openEditor(BuildContext context, {VlessProfile? profile}) {
@@ -204,18 +349,33 @@ class HomeScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Удалить конфиг?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(width: 12),
+            const Text('Удалить конфиг?'),
+          ],
+        ),
         content: const Text('Действие нельзя отменить.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Отмена'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () async {
               Navigator.pop(context);
               await context.read<ProfileNotifier>().delete(id);
             },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Удалить'),
           ),
         ],
@@ -228,16 +388,34 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({
+class _ConnectionBottomBar extends StatelessWidget {
+  const _ConnectionBottomBar({
     required this.vpnStatus,
     required this.active,
+    required this.uploadBytes,
+    required this.downloadBytes,
+    required this.onStart,
     required this.onDisconnect,
   });
 
   final VpnStatus vpnStatus;
   final VlessProfile? active;
+  final int uploadBytes;
+  final int downloadBytes;
+  final VoidCallback onStart;
   final VoidCallback onDisconnect;
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) {
+      return '$bytes Б';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(2)} КБ';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} МБ';
+    } else {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -247,24 +425,91 @@ class _ConnectionCard extends StatelessWidget {
       VpnStatus.error => 'Ошибка',
       VpnStatus.disconnected => 'Отключено',
     };
-    final color = switch (vpnStatus) {
-      VpnStatus.connected => Colors.green,
-      VpnStatus.connecting => Colors.orange,
-      VpnStatus.error => Colors.red,
-      VpnStatus.disconnected => Colors.grey,
+    final statusColor = switch (vpnStatus) {
+      VpnStatus.connected => const Color(0xFF00D9FF), // Blue like VLESS badge
+      VpnStatus.connecting => const Color(0xFFFFB800),
+      VpnStatus.error => const Color(0xFFFF4444),
+      VpnStatus.disconnected => Colors.white.withOpacity(0.6),
     };
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: ListTile(
-        leading: Icon(Icons.shield, color: color),
-        title: Text(statusText),
-        subtitle: Text(active != null
-            ? '${active!.name} • ${active!.host}:${active!.port}'
-            : 'Нет активного конфига'),
-        trailing: vpnStatus == VpnStatus.connected
-            ? TextButton(onPressed: onDisconnect, child: const Text('Стоп'))
-            : null,
-      ),
+    
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF000000),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  flex: 1,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '▲ ${_formatBytes(uploadBytes)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withOpacity(0.9),
+                            ),
+                      ),
+                      Text(
+                        '▼ ${_formatBytes(downloadBytes)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withOpacity(0.9),
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 80),
+                Flexible(
+                  flex: 1,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        statusText,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: statusColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      if (active != null)
+                        Text(
+                          '${active!.name}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -272,29 +517,19 @@ class _ConnectionCard extends StatelessWidget {
 class _ProfileActions extends StatelessWidget {
   const _ProfileActions({
     required this.profile,
-    required this.onConnect,
     required this.onEdit,
     required this.onDelete,
-    required this.onSetActive,
   });
 
   final VlessProfile profile;
-  final VoidCallback onConnect;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onSetActive;
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       onSelected: (value) {
         switch (value) {
-          case 'connect':
-            onConnect();
-            break;
-          case 'active':
-            onSetActive();
-            break;
           case 'edit':
             onEdit();
             break;
@@ -304,8 +539,6 @@ class _ProfileActions extends StatelessWidget {
         }
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(value: 'connect', child: Text('Подключить')),
-        const PopupMenuItem(value: 'active', child: Text('Сделать активным')),
         const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
         const PopupMenuItem(value: 'delete', child: Text('Удалить')),
       ],
