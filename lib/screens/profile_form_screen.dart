@@ -74,11 +74,18 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
     final isEditing = widget.profile != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'Редактировать' : 'Новый конфиг'),
+        title: Text(
+          isEditing ? 'Редактировать' : 'Новый конфиг',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
-          TextButton(
+          TextButton.icon(
             onPressed: _submit,
-            child: const Text('Сохранить'),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Сохранить'),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.primary,
+            ),
           ),
         ],
       ),
@@ -89,36 +96,87 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextFormField(
-                controller: _uriImport,
-                decoration: InputDecoration(
-                  labelText: 'Импорт VLESS URI',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.paste),
-                    onPressed: _pasteUri,
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.link_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Импорт из URI',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _uriImport,
+                        decoration: InputDecoration(
+                          labelText: 'VLESS URI',
+                          hintText: 'vless://...',
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.paste_rounded),
+                            onPressed: _pasteUri,
+                          ),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _applyUri,
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Заполнить из URI'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _applyUri,
-                child: const Text('Заполнить из URI'),
+              const SizedBox(height: 24),
+              Text(
+                'Основные параметры',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _name,
-                decoration: const InputDecoration(labelText: 'Название'),
+                decoration: InputDecoration(
+                  labelText: 'Название',
+                  prefixIcon: const Icon(Icons.label_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
                 validator: (v) => (v == null || v.isEmpty)
                     ? 'Введите название'
                     : null,
               ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
                     flex: 2,
                     child: TextFormField(
                       controller: _host,
-                      decoration: const InputDecoration(labelText: 'Хост'),
+                      decoration: InputDecoration(
+                        labelText: 'Хост',
+                        prefixIcon: const Icon(Icons.dns_rounded),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                      ),
                       validator: (v) => (v == null || v.isEmpty)
                           ? 'Хост обязателен'
                           : null,
@@ -128,7 +186,12 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                   Expanded(
                     child: TextFormField(
                       controller: _port,
-                      decoration: const InputDecoration(labelText: 'Порт'),
+                      decoration: InputDecoration(
+                        labelText: 'Порт',
+                        prefixIcon: const Icon(Icons.numbers_rounded),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                      ),
                       keyboardType: TextInputType.number,
                       validator: (v) {
                         final value = int.tryParse(v ?? '');
@@ -139,15 +202,34 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _uuid,
-                decoration: const InputDecoration(labelText: 'UUID'),
+                decoration: InputDecoration(
+                  labelText: 'UUID',
+                  prefixIcon: const Icon(Icons.vpn_key_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
                 validator: (v) =>
                     (v == null || v.isEmpty) ? 'UUID обязателен' : null,
               ),
+              const SizedBox(height: 24),
+              Text(
+                'Безопасность и транспорт',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: _security,
-                decoration: const InputDecoration(labelText: 'Безопасность'),
+                decoration: InputDecoration(
+                  labelText: 'Безопасность',
+                  prefixIcon: const Icon(Icons.lock_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
                 items: const [
                   DropdownMenuItem(value: 'none', child: Text('none')),
                   DropdownMenuItem(value: 'tls', child: Text('tls')),
@@ -155,25 +237,15 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                 ],
                 onChanged: (v) => setState(() => _security = v ?? 'none'),
               ),
-              TextFormField(
-                controller: _sni,
-                decoration: const InputDecoration(labelText: 'SNI'),
-              ),
-              TextFormField(
-                controller: _alpn,
-                decoration: const InputDecoration(labelText: 'ALPN через запятую'),
-              ),
-              TextFormField(
-                controller: _fingerprint,
-                decoration: const InputDecoration(labelText: 'Fingerprint'),
-              ),
-              TextFormField(
-                controller: _flow,
-                decoration: const InputDecoration(labelText: 'Flow (например xtls-rprx-vision)'),
-              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<VlessTransport>(
                 initialValue: _transport,
-                decoration: const InputDecoration(labelText: 'Транспорт'),
+                decoration: InputDecoration(
+                  labelText: 'Транспорт',
+                  prefixIcon: const Icon(Icons.network_check_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
                 items: VlessTransport.values
                     .map((t) => DropdownMenuItem(
                           value: t,
@@ -184,24 +256,97 @@ class _ProfileFormScreenState extends State<ProfileFormScreen> {
                   if (v != null) setState(() => _transport = v);
                 },
               ),
+              const SizedBox(height: 24),
+              Text(
+                'Дополнительные параметры',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _sni,
+                decoration: InputDecoration(
+                  labelText: 'SNI',
+                  prefixIcon: const Icon(Icons.domain_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _alpn,
+                decoration: InputDecoration(
+                  labelText: 'ALPN через запятую',
+                  prefixIcon: const Icon(Icons.code_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fingerprint,
+                decoration: InputDecoration(
+                  labelText: 'Fingerprint',
+                  prefixIcon: const Icon(Icons.fingerprint_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _flow,
+                decoration: InputDecoration(
+                  labelText: 'Flow (например xtls-rprx-vision)',
+                  prefixIcon: const Icon(Icons.swap_horiz_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _path,
-                decoration: const InputDecoration(labelText: 'Path/ServiceName'),
+                decoration: InputDecoration(
+                  labelText: 'Path/ServiceName',
+                  prefixIcon: const Icon(Icons.route_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
               ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _hostHeader,
-                decoration: const InputDecoration(labelText: 'Host Header'),
+                decoration: InputDecoration(
+                  labelText: 'Host Header',
+                  prefixIcon: const Icon(Icons.http_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
               ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _remark,
-                decoration: const InputDecoration(labelText: 'Описание'),
+                decoration: InputDecoration(
+                  labelText: 'Описание',
+                  prefixIcon: const Icon(Icons.description_rounded),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surface,
+                ),
+                maxLines: 3,
               ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _submit,
-                icon: const Icon(Icons.save),
-                label: const Text('Сохранить'),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _submit,
+                  icon: const Icon(Icons.save_rounded),
+                  label: const Text('Сохранить конфиг'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
               ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
