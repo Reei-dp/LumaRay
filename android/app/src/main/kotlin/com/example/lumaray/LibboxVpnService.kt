@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
@@ -37,15 +38,31 @@ class LibboxVpnService : VpnService(), PlatformInterface {
         private const val CHANNEL_ID = "lumaray_vpn_channel"
         private const val NOTIFICATION_ID = 101
         private const val EXTRA_CONFIG = "configPath"
+        private const val EXTRA_PROFILE_NAME = "profileName"
+        private const val EXTRA_TRANSPORT = "transport"
         
         private var boxService: BoxService? = null
         private var fileDescriptor: ParcelFileDescriptor? = null
+        private var uploadBytes: Long = 0L
+        private var downloadBytes: Long = 0L
+        private var lastRxBytes: Long = 0L
+        private var lastTxBytes: Long = 0L
+        private var currentProfileName: String? = null
+        private var currentTransport: String? = null
+        private var serviceInstance: LibboxVpnService? = null
+        private var onVpnStoppedCallback: (() -> Unit)? = null
         
-        fun start(context: Context, configPath: String) {
+        fun setOnVpnStoppedCallback(callback: (() -> Unit)?) {
+            onVpnStoppedCallback = callback
+        }
+        
+        fun start(context: Context, configPath: String, profileName: String? = null, transport: String? = null) {
             val intent = Intent(context, LibboxVpnService::class.java).apply {
                 putExtra(EXTRA_CONFIG, configPath)
+                putExtra(EXTRA_PROFILE_NAME, profileName)
+                putExtra(EXTRA_TRANSPORT, transport)
             }
-            Log.i(TAG, "Start service config=$configPath")
+            Log.i(TAG, "Start service config=$configPath, profile=$profileName, transport=$transport")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -53,24 +70,65 @@ class LibboxVpnService : VpnService(), PlatformInterface {
             }
         }
         
+        fun updateNotification(context: Context) {
+            serviceInstance?.updateNotificationInternal()
+        }
+        
         fun stop(context: Context) {
             boxService?.close()
             boxService = null
             fileDescriptor?.close()
             fileDescriptor = null
+            uploadBytes = 0L
+            downloadBytes = 0L
+            lastRxBytes = 0L
+            lastTxBytes = 0L
+            currentProfileName = null
+            currentTransport = null
             context.stopService(Intent(context, LibboxVpnService::class.java))
+            // Notify callback that VPN was stopped
+            onVpnStoppedCallback?.invoke()
+        }
+        
+        fun getStats(): Pair<Long, Long> {
+            val service = boxService ?: return Pair(0L, 0L)
+            return try {
+                // Try to get stats from BoxService
+                // BoxService might have a method to get statistics
+                // If not available, we'll track manually
+                Pair(uploadBytes, downloadBytes)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get stats: ${e.message}", e)
+                Pair(uploadBytes, downloadBytes)
+            }
+        }
+        
+        fun updateStats(upload: Long, download: Long) {
+            uploadBytes = upload
+            downloadBytes = download
         }
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "STOP_VPN") {
+            stop(this)
+            return START_NOT_STICKY
+        }
+        
         val configPath = intent?.getStringExtra(EXTRA_CONFIG)
         if (configPath.isNullOrEmpty()) {
             stopSelf()
             return START_NOT_STICKY
         }
         
-        Log.i(TAG, "onStartCommand config=$configPath")
-        startForeground(NOTIFICATION_ID, buildNotification())
+        currentProfileName = intent?.getStringExtra(EXTRA_PROFILE_NAME)
+        currentTransport = intent?.getStringExtra(EXTRA_TRANSPORT)
+        serviceInstance = this
+        
+        Log.i(TAG, "onStartCommand config=$configPath, profile=$currentProfileName, transport=$currentTransport")
+        val notification = buildNotification()
+        Log.d(TAG, "Starting foreground service with notification")
+        startForeground(NOTIFICATION_ID, notification)
         
         try {
             val configContent = File(configPath).readText()
@@ -92,6 +150,10 @@ class LibboxVpnService : VpnService(), PlatformInterface {
             newService.start()
             
             boxService = newService
+            
+            // Start stats tracking
+            startStatsTracking()
+            
             Log.i(TAG, "Libbox service started")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start libbox service: ${e.message}", e)
@@ -103,11 +165,95 @@ class LibboxVpnService : VpnService(), PlatformInterface {
     
     override fun onDestroy() {
         DefaultNetworkMonitor.setListener(null, null)
+        stopStatsTracking()
         boxService?.close()
         boxService = null
         fileDescriptor?.close()
         fileDescriptor = null
+        uploadBytes = 0L
+        downloadBytes = 0L
+        lastRxBytes = 0L
+        lastTxBytes = 0L
+        currentProfileName = null
+        currentTransport = null
+        serviceInstance = null
         super.onDestroy()
+    }
+    
+    private var statsTrackingThread: Thread? = null
+    private var isTrackingStats = false
+    private var currentRxSpeed: Long = 0L
+    private var currentTxSpeed: Long = 0L
+    
+    private fun startStatsTracking() {
+        isTrackingStats = true
+        val appUid = android.os.Process.myUid()
+        statsTrackingThread = Thread {
+            var lastUidRxBytes = TrafficStats.getUidRxBytes(appUid)
+            var lastUidTxBytes = TrafficStats.getUidTxBytes(appUid)
+            
+            while (isTrackingStats) {
+                try {
+                    val service = boxService
+                    if (service != null) {
+                        // Use TrafficStats API - tracks all network traffic for this UID
+                        // Since VPN service routes all traffic, this should give us VPN stats
+                        val currentRxBytes = TrafficStats.getUidRxBytes(appUid)
+                        val currentTxBytes = TrafficStats.getUidTxBytes(appUid)
+                        
+                        if (currentRxBytes != TrafficStats.UNSUPPORTED.toLong() && 
+                            currentTxBytes != TrafficStats.UNSUPPORTED.toLong()) {
+                            
+                            // Calculate difference from last reading
+                            val rxDiff = if (lastUidRxBytes > 0 && currentRxBytes >= lastUidRxBytes) {
+                                currentRxBytes - lastUidRxBytes
+                            } else {
+                                0L
+                            }
+                            
+                            val txDiff = if (lastUidTxBytes > 0 && currentTxBytes >= lastUidTxBytes) {
+                                currentTxBytes - lastUidTxBytes
+                            } else {
+                                0L
+                            }
+                            
+                            // Update cumulative stats
+                            downloadBytes += rxDiff
+                            uploadBytes += txDiff
+                            
+                            // Store current speed for notification
+                            currentRxSpeed = rxDiff
+                            currentTxSpeed = txDiff
+                            
+                            lastUidRxBytes = currentRxBytes
+                            lastUidTxBytes = currentTxBytes
+                            
+                            // Update notification every second with new stats
+                            updateNotificationInternal()
+                            
+                            Log.d(TAG, "Stats: upload=$uploadBytes, download=$downloadBytes (rx=$rxDiff, tx=$txDiff)")
+                        } else {
+                            Log.d(TAG, "TrafficStats not supported on this device")
+                        }
+                    }
+                    Thread.sleep(1000) // Update every second
+                } catch (e: InterruptedException) {
+                    // Thread was interrupted, exit gracefully
+                    Log.d(TAG, "Stats tracking thread interrupted, stopping")
+                    break
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in stats tracking: ${e.message}", e)
+                }
+            }
+        }
+        statsTrackingThread?.start()
+    }
+    
+    
+    private fun stopStatsTracking() {
+        isTrackingStats = false
+        statsTrackingThread?.interrupt()
+        statsTrackingThread = null
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
@@ -359,31 +505,115 @@ class LibboxVpnService : VpnService(), PlatformInterface {
         // Update notification if needed
     }
     
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) {
+            return "$bytes Б"
+        } else if (bytes < 1024 * 1024) {
+            return String.format("%.2f кБ", bytes / 1024.0)
+        } else if (bytes < 1024 * 1024 * 1024) {
+            return String.format("%.2f МБ", bytes / (1024.0 * 1024.0))
+        } else {
+            return String.format("%.2f ГБ", bytes / (1024.0 * 1024.0 * 1024.0))
+        }
+    }
+    
+    private fun formatSpeed(bytes: Long): String {
+        if (bytes < 1024) {
+            return "$bytes Б/с"
+        } else if (bytes < 1024 * 1024) {
+            return String.format("%.2f кБ/с", bytes / 1024.0)
+        } else {
+            return String.format("%.2f МБ/с", bytes / (1024.0 * 1024.0))
+        }
+    }
+    
+    private fun updateNotificationInternal() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, buildNotification())
+    }
+    
     private fun buildNotification(): Notification {
         val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "LumaRay VPN",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            mgr.createNotificationChannel(channel)
+            // Check if channel already exists
+            val existingChannel = mgr.getNotificationChannel(CHANNEL_ID)
+            if (existingChannel == null) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "LumaRay VPN",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                )
+                channel.setShowBadge(false)
+                channel.enableLights(false)
+                channel.enableVibration(false)
+                channel.setSound(null, null)
+                channel.description = "Уведомления о статусе VPN подключения"
+                channel.setShowBadge(false)
+                mgr.createNotificationChannel(channel)
+                Log.d(TAG, "Created notification channel: $CHANNEL_ID")
+            } else {
+                Log.d(TAG, "Notification channel already exists: $CHANNEL_ID")
+            }
         }
         
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            openAppIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("LumaRay VPN")
-            .setContentText("VPN подключение активно")
+        val stopIntent = Intent(this, LibboxVpnService::class.java).apply {
+            action = "STOP_VPN"
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        
+        val profileName = currentProfileName ?: "Неизвестный конфиг"
+        val transport = currentTransport?.uppercase() ?: "VLESS"
+        
+        // Title with total stats: "LumaRay • 3,06 кБ↑ 6,16 кБ↓"
+        val titleText = "LumaRay • ${formatBytes(uploadBytes)}↑ ${formatBytes(downloadBytes)}↓"
+        
+        // Expanded content
+        val expandedText = buildString {
+            append(profileName)
+            if (currentTransport != null) {
+                append("\n[VLESS - $transport]")
+            }
+            append("\nПрокси : ${formatSpeed(currentTxSpeed)}↑ ${formatSpeed(currentRxSpeed)}↓")
+        }
+        
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(titleText)
+            .setContentText(profileName)
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText(expandedText)
+                .setSummaryText("VPN подключение активно"))
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentIntent(pendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Остановить",
+                stopPendingIntent
+            )
             .setOngoing(true)
+            .setShowWhen(false)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(false)
             .build()
+        
+        Log.d(TAG, "Built notification: title=$titleText, profile=$profileName")
+        return notification
     }
 }
 
