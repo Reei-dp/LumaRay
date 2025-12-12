@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get version from tag or input
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Extract version parts
+        id: version_parts
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          BUILD_NUMBER=$(date +%s)
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "Version: $MAJOR.$MINOR.$PATCH+$BUILD_NUMBER"
+
+      - name: Update version in pubspec.yaml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUILD_NUMBER="${{ steps.version_parts.outputs.build_number }}"
+          sed -i "s/^version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
+          echo "Updated version to: $VERSION+$BUILD_NUMBER"
+          cat pubspec.yaml | grep "^version:"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: |
+          flutter build apk --release --split-per-abi
+          mkdir -p release
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release/app-armeabi-v7a-release.apk || true
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release/app-arm64-v8a-release.apk || true
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk release/app-x86_64-release.apk || true
+          cp build/app/outputs/flutter-apk/app-release.apk release/app-release.apk || true
+
+      - name: Build App Bundle (AAB)
+        run: |
+          flutter build appbundle --release
+          mkdir -p release
+          cp build/app/outputs/bundle/release/app-release.aab release/app-release.aab
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            ## LumaRay v${{ steps.version.outputs.version }}
+            
+            ### Downloads
+            - **APK (Universal)**: app-release.apk
+            - **APK (ARM64)**: app-arm64-v8a-release.apk
+            - **APK (ARMv7)**: app-armeabi-v7a-release.apk
+            - **App Bundle (AAB)**: app-release.aab
+            
+            ### Build Info
+            - Version: ${{ steps.version.outputs.version }}
+            - Build Number: ${{ steps.version_parts.outputs.build_number }}
+            - Commit: ${{ github.sha }}
+          files: |
+            release/*.apk
+            release/*.aab
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit version update
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add pubspec.yaml
+          git commit -m "Bump version to ${{ steps.version.outputs.version }}+${{ steps.version_parts.outputs.build_number }}" || exit 0
+          git push || exit 0
+
