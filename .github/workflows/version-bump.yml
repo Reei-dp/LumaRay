@@ -1,14 +1,11 @@
 name: Auto Version Bump
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-      - '.github/**'
 
 jobs:
   bump-version:
@@ -17,19 +14,34 @@ jobs:
       contents: write
     
     steps:
-      - name: Checkout code
+      - name: Check if PR was merged
+        id: check
+        run: |
+          if [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+            echo "merged=true" >> $GITHUB_OUTPUT
+            echo "PR was merged, proceeding with version bump"
+          else
+            echo "merged=false" >> $GITHUB_OUTPUT
+            echo "PR was closed without merge, skipping version bump"
+          fi
+
+      - name: Checkout main branch
+        if: steps.check.outputs.merged == 'true'
         uses: actions/checkout@v4
         with:
+          ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup Flutter
+        if: steps.check.outputs.merged == 'true'
         uses: subosito/flutter-action@v2
         with:
           flutter-version: 'latest'
           channel: 'stable'
 
       - name: Get current version
+        if: steps.check.outputs.merged == 'true'
         id: current_version
         run: |
           CURRENT_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
@@ -38,19 +50,8 @@ jobs:
           echo "current_build=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "Current version: $CURRENT_VERSION+$BUILD_NUMBER"
 
-      - name: Check if version needs bumping
-        id: check
-        run: |
-          # Check if this commit already has a version bump
-          if git log -1 --pretty=%B | grep -q "Bump version"; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Version already bumped in this commit"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: Bump patch version
-        if: steps.check.outputs.skip == 'false'
+        if: steps.check.outputs.merged == 'true'
         id: bump
         run: |
           CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
@@ -65,17 +66,17 @@ jobs:
           echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION+$NEW_BUILD"
 
       - name: Update pubspec.yaml
-        if: steps.check.outputs.skip == 'false'
+        if: steps.check.outputs.merged == 'true'
         run: |
           sed -i "s/^version: .*/version: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}/" pubspec.yaml
           echo "Updated version to: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}"
 
       - name: Commit version bump
-        if: steps.check.outputs.skip == 'false'
+        if: steps.check.outputs.merged == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add pubspec.yaml
           git commit -m "Bump version to ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }} [skip ci]"
-          git push
+          git push origin main
 
