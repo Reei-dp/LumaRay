@@ -1,0 +1,81 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Get current version
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
+          BUILD_NUMBER=$(grep "^version:" pubspec.yaml | sed 's/.*+//')
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "current_build=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT_VERSION+$BUILD_NUMBER"
+
+      - name: Check if version needs bumping
+        id: check
+        run: |
+          # Check if this commit already has a version bump
+          if git log -1 --pretty=%B | grep -q "Bump version"; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Version already bumped in this commit"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump patch version
+        if: steps.check.outputs.skip == 'false'
+        id: bump
+        run: |
+          CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          NEW_BUILD=$(({{ steps.current_version.outputs.current_build }} + 1))
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_build=$NEW_BUILD" >> $GITHUB_OUTPUT
+          echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION+$NEW_BUILD"
+
+      - name: Update pubspec.yaml
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          sed -i "s/^version: .*/version: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}/" pubspec.yaml
+          echo "Updated version to: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}"
+
+      - name: Commit version bump
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add pubspec.yaml
+          git commit -m "Bump version to ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }} [skip ci]"
+          git push
+
