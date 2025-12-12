@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number (e.g., 1.0.0)'
-        required: true
+        description: 'Version number (e.g., 1.0.0). Leave empty to use version from pubspec.yaml'
+        required: false
         type: string
 
 jobs:
@@ -36,16 +36,25 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Get version from tag or input
+      - name: Get version from tag, input, or pubspec.yaml
         id: version
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+            if [ -z "${{ github.event.inputs.version }}" ]; then
+              # Use version from pubspec.yaml if not provided
+              VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //' | sed 's/+.*//')
+              echo "Using version from pubspec.yaml: $VERSION"
+            else
+              VERSION="${{ github.event.inputs.version }}"
+              echo "Using provided version: $VERSION"
+            fi
           else
+            # Extract from tag
             VERSION=${GITHUB_REF#refs/tags/v}
+            echo "Using version from tag: $VERSION"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          echo "Final version: $VERSION"
 
       - name: Extract version parts
         id: version_parts
