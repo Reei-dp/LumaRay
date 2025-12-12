@@ -48,21 +48,31 @@ jobs:
         id: bump
         run: |
           CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
+          CURRENT_BUILD="${{ steps.current_version.outputs.current_build }}"
           MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
           MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
           PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          NEW_BUILD=$(({{ steps.current_version.outputs.current_build }} + 1))
+          # Ensure build number is numeric
+          if [ -z "$CURRENT_BUILD" ] || [ "$CURRENT_BUILD" = "" ]; then
+            NEW_BUILD=1
+          else
+            NEW_BUILD=$((CURRENT_BUILD + 1))
+          fi
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "new_build=$NEW_BUILD" >> $GITHUB_OUTPUT
-          echo "Bumping version: $CURRENT_VERSION -> $NEW_VERSION+$NEW_BUILD"
+          echo "Bumping version: $CURRENT_VERSION+$CURRENT_BUILD -> $NEW_VERSION+$NEW_BUILD"
 
       - name: Update pubspec.yaml
         if: steps.check.outputs.merged == 'true'
         run: |
-          sed -i "s/^version: .*/version: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}/" pubspec.yaml
-          echo "Updated version to: ${{ steps.bump.outputs.new_version }}+${{ steps.bump.outputs.new_build }}"
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          NEW_BUILD="${{ steps.bump.outputs.new_build }}"
+          sed -i "s/^version: .*/version: ${NEW_VERSION}+${NEW_BUILD}/" pubspec.yaml
+          echo "Updated version to: ${NEW_VERSION}+${NEW_BUILD}"
+          # Verify the change
+          grep "^version:" pubspec.yaml
 
       - name: Commit version bump
         if: steps.check.outputs.merged == 'true'
