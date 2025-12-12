@@ -4,12 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'  # Triggers on tags like v1.0.0, v1.2.3, etc.
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g., 1.0.0)'
-        required: true
-        type: string
+  workflow_dispatch:  # Manual trigger - uses version from pubspec.yaml
 
 jobs:
   release:
@@ -32,42 +27,20 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: 'latest'
           channel: 'stable'
           cache: true
 
-      - name: Get version from tag or input
+      - name: Get version from pubspec.yaml
         id: version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
-          fi
+          FULL_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          VERSION=$(echo $FULL_VERSION | sed 's/+.*//')
+          BUILD_NUMBER=$(echo $FULL_VERSION | sed 's/.*+//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-      - name: Extract version parts
-        id: version_parts
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-          BUILD_NUMBER=$(date +%s)
-          echo "major=$MAJOR" >> $GITHUB_OUTPUT
-          echo "minor=$MINOR" >> $GITHUB_OUTPUT
-          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+          echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          echo "Version: $MAJOR.$MINOR.$PATCH+$BUILD_NUMBER"
-
-      - name: Update version in pubspec.yaml
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          BUILD_NUMBER="${{ steps.version_parts.outputs.build_number }}"
-          sed -i "s/^version: .*/version: $VERSION+$BUILD_NUMBER/" pubspec.yaml
-          echo "Updated version to: $VERSION+$BUILD_NUMBER"
-          cat pubspec.yaml | grep "^version:"
+          echo "Using version from pubspec.yaml: $FULL_VERSION"
 
       - name: Install dependencies
         run: flutter pub get
@@ -102,8 +75,8 @@ jobs:
             - **App Bundle (AAB)**: app-release.aab
             
             ### Build Info
-            - Version: ${{ steps.version.outputs.version }}
-            - Build Number: ${{ steps.version_parts.outputs.build_number }}
+            - Version: ${{ steps.version.outputs.full_version }}
+            - Build Number: ${{ steps.version.outputs.build_number }}
             - Commit: ${{ github.sha }}
           files: |
             release/*.apk
@@ -113,12 +86,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit version update
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add pubspec.yaml
-          git commit -m "Bump version to ${{ steps.version.outputs.version }}+${{ steps.version_parts.outputs.build_number }}" || exit 0
-          git push || exit 0
 
